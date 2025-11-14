@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>FTP File Transfer Platform</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <h1>FTP File Transfer Platform</h1>
+      <p class="tag">Web-based file sharing using Node.js + Express</p>
+</div>
+ <div class="action-row">
+        <button id="aboutBtn" class="btn ghost">Learn</button>
+        <button id="devBtn" class="btn ghost">Developed By</button>
+        <button id="helpBtn" class="btn ghost">Help</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="card upload-card">
+      <h2>Upload a File</h2>
+      <form id="uploadForm" class="upload-form">
+        <input type="file" id="fileInput" />
+        <button type="submit" class="btn primary">Upload</button>
+      </form>
+
+      <div id="progressContainer" class="progress-wrap" aria-hidden="true">
+        <progress id="progressBar" value="0" max="100"></progress>
+        <p id="status" class="status"></p>
+      </div>
+</section>
+<!-- ==================== AVAILABLE FILES ==================== -->
+<section class="card files-card">
+  <h2>Available Files</h2>
+  <ul id="fileList" class="file-list"></ul>
+  <button id="getIpBtn" class="btn ghost">Get Link</button>
+  <p id="ipDisplay" style="margin-top:8px;color:#a9b4c2;"></p>
+</section>
+  </main>
+
+  <!-- ==================== ABOUT FTP (DETAILED) ==================== -->
+  <div id="aboutModal" class="modal">
+    <div class="modal-content large">
+      <button class="close" data-close>&times;</button>
+      <h3>About FTP (File Transfer Protocol)</h3>
+      <div class="modal-body">
+        <h4>1) Overview & Motivation</h4>
+        <p>FTP is a classic <strong>application-layer</strong> protocol designed for reliable, bulk file transfer over TCP/IP. It predates the web and was created to standardize how hosts exchange files across heterogeneous systems. Unlike simple “download-only” services, FTP includes a rich set of commands for <em>navigating directories, listing files, uploading, downloading, renaming, deleting</em>, and even negotiating <em>representation types</em> (e.g., text vs. binary).</p>
+
+        <h4>2) Dual-Connection Architecture</h4>
+        <p>FTP’s most distinctive design choice is the use of <strong>two TCP connections</strong>:</p>
+        <ul>
+          <li><strong>Control connection</strong> (default server port <code>21</code>): long-lived; carries commands & 3-digit replies (e.g., <code>USER</code>, <code>PASS</code>, <code>LIST</code>, <code>RETR</code>, <code>STOR</code>, replies like <code>220</code>, <code>230</code>, <code>550</code>).</li>
+          <li><strong>Data connection</strong> (server port <code>20</code> or ephemeral): short-lived; opened per transfer for directory listings or file contents, then closed.</li>
+        </ul>
+        <p>This split allows the client to issue new commands while an earlier transfer is in progress, and to cleanly separate control semantics from data movement.</p>
+
+        <h4>3) Active vs. Passive Mode</h4>
+        <ul>
+          <li><strong>Active:</strong> Client opens control to server:21, then sends <code>PORT</code> with client IP/port. Server actively connects back from its data port to the client. Problematic behind NAT/firewalls that block inbound connections.</li>
+          <li><strong>Passive (PASV/EPSV):</strong> Client asks the server to open a passive port and returns the address/port. The client connects out to that port. Preferred on today’s NAT’d networks.</li>
+        </ul>
+
+        <h4>4) Commands & Replies (PI/DTP Model)</h4>
+        <p>FTP distinguishes the <strong>Protocol Interpreter (PI)</strong> handling control messages and the <strong>Data Transfer Process (DTP)</strong> handling payload. Command categories include:</p>
+        <ul>
+          <li><em>Session/auth:</em> <code>USER</code>, <code>PASS</code>, <code>QUIT</code></li>
+          <li><em>Navigation:</em> <code>CWD</code>, <code>CDUP</code>, <code>PWD</code></li>
+          <li><em>Transfer params:</em> <code>PORT</code>, <code>PASV</code>, <code>TYPE</code> (ASCII/Binary), <code>MODE</code> (Stream/Block/Compressed), <code>STRU</code> (File/Record/Page)</li>
+          <li><em>File ops:</em> <code>LIST</code>/<code>NLST</code>, <code>RETR</code>, <code>STOR</code>, <code>APPE</code>, <code>DELE</code>, <code>RNFR</code>/<code>RNTO</code>, <code>MKD</code>/<code>RMD</code>, <code>SITE</code></li>
+        </ul>
+        <p>Replies are 3-digit codes grouped by class (1xx info, 2xx success, 3xx need more, 4xx transient failure, 5xx permanent failure) followed by explanatory text (e.g., <code>150 Opening data connection</code>, <code>226 Transfer complete</code>, <code>550 File unavailable</code>).</p>
+
+        <h4>5) Representation, Structure, Modes</h4>
+        <ul>
+          <li><strong>Representations:</strong> <em>ASCII</em> (canonical text), <em>EBCDIC</em> (legacy), <em>Image</em> (binary/raw bytes). Modern transfers use Image for exact byte fidelity.</li>
+          <li><strong>Structures:</strong> <em>File</em> (continuous stream), <em>Record</em>, <em>Page</em> (rare today).</li>
+          <li><strong>Transmission modes:</strong> <em>Stream</em> (default over TCP), <em>Block</em> (block headers), <em>Compressed</em> (run-length). Stream+Image is the common pairing.</li>
+        </ul>
+
+        <h4>6) Control Flow & Typical Session</h4>
+        <pre><code>
+Client → server:21  (TCP control)
+&lt; 220 Service ready
+&gt; USER alice
+&lt; 331 Password required
+&gt; PASS ********
+&lt; 230 User logged in
+&gt; TYPE I
+&lt; 200 Type set to I (binary)
+&gt; PASV
+&lt; 227 Entering Passive Mode (h1,h2,h3,h4,p1,p2)
+Client → server:h1.h2.h3.h4:p   (TCP data)
+&gt; RETR report.pdf
+&lt; 150 Opening binary mode data connection
+&lt; 226 Transfer complete
+&gt; QUIT
+&lt; 221 Goodbye
+        </code></pre>
+
+        <h4>7) Security Considerations</h4>
+        <ul>
+          <li><strong>Plain FTP</strong> sends credentials & data as cleartext — vulnerable to sniffing.</li>
+          <li><strong>FTPS</strong> (FTP over TLS): <em>Explicit</em> (AUTH TLS upgrade) or <em>Implicit</em> (legacy, port 990). Encrypts control and optionally data.</li>
+          <li><strong>SFTP</strong> (SSH File Transfer Protocol): different protocol over SSH (port 22), not FTP over SSH; provides integrity, confidentiality, auth.</li>
+        </ul>
+
+        <h4>8) NAT/Firewall & IPv6</h4>
+        <p>Active mode struggles with inbound connections through NAT. Passive mode is standard on NAT’d networks. EPSV/EPRT generalize PASV/PORT for IPv6 compatibility and cleaner address handling.</p>
+
+        <h4>9) Features & Extensions</h4>
+        <ul>
+          <li><strong>Resume/offset:</strong> <code>REST</code> for partial transfers.</li>
+          <li><strong>Machine-readable listings:</strong> <code>MLSD/MLST</code>.</li>
+          <li><strong>Anonymous FTP:</strong> public downloads with user <code>anonymous</code>.</li>
+          <li><strong>Server side ops:</strong> rename, mkdir, rmdir, chmod (via SITE), etc.</li>
+        </ul>
+
+        <h4>10) Performance Notes</h4>
+        <p>FTP’s separate data channel avoids command head-of-line blocking, but multiple round-trips and control-data choreography add latency compared to single-connection HTTP. Binary (Image) mode avoids costly text conversions.</p>
+
+        <h4>11) How This Project Relates</h4>
+        <p>This project mimics FTP’s core user operations (upload, list, download, delete) via HTTP with a friendly browser UI. It demonstrates server-client coordination, file handling, and LAN connectivity without requiring FTP clients or multi-port coordination.</p>
+
+        <h4>12) Further Learning (Video)</h4>
+        <p>
+         <div class="video-container">
+        <h3>🎥 Watch FTP Explained</h3>
+        <iframe 
+          width="100%" 
+          height="360" 
+          src="https://www.youtube.com/embed/tOj8MSEIbfA?si=NqdQMRo9f5bbgFUh" 
+          title="FTP Explanation Video" 
+          frameborder="0" 
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+          allowfullscreen>
+        </iframe>
+      </div>
+<p><strong>References:</strong></p>
+        <ul>
+          <li>Behrouz A. Forouzan, <em>Data Communications and Networking</em>, 5th Edition, McGraw-Hill.</li>
+          <li>Andrew S. Tanenbaum, David J. Wetherall, <em>Computer Networks</em>, 5th Edition, Pearson.</li>
+        </ul>
+</div>
+</div>
+</div>
+<!-- ==================== DEVELOPED BY (with Guided By inside) ==================== -->
+<div id="devModal" class="modal">
+  <div class="modal-content">
+    <button class="close" data-close>&times;</button>
+
+    <!-- Developer Info -->
+    <div class="credit">
+      <img class="credit-pic" src="profile.jpg" alt="Aryan Sharma">
+      <div class="credit-text">
+        <div class="credit-title">Developed By</div>
+        <div class="credit-name">Aryan Sharma</div>
+        <div class="credit-sub">Registration No.: 24BCE5037</div>
+      </div>
+    </div>
+
+    <!-- Inner Guided By Button -->
+    <div style="text-align:center; margin-top:20px;">
+      <button id="innerGuideBtn" class="btn primary">View Guided By</button>
+    </div>
+
+    <!-- Hidden Guided By Section -->
+    <div id="innerGuideSection" style="display:none; margin-top:20px;">
+      <hr style="margin: 20px 0; border: none; border-top: 1px solid rgba(255,255,255,0.15);">
+      <div class="credit">
+        <img class="credit-pic" src="guide.jpg" alt="Dr. Swaminathan Annadurai">
+        <div class="credit-text">
+          <div class="credit-title">Guided By</div>
+          <div class="credit-name">Dr. Swaminathan Annadurai</div>
+          <div class="credit-sub">Faculty Mentor</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>  
+ <!-- ==================== HELP ==================== -->
+<div id="helpModal" class="modal">
+  <div class="modal-content">
+    <button class="close" data-close>&times;</button>
+    <h3>How I Made This Project & How to Use It</h3>
+
+    <div class="modal-body">
+      <h4>🧠 Part 1 — How This Project Was Developed</h4>
+      <ol class="help-list">
+        <li><strong>Planning the Concept:</strong><br>
+          The goal was to simulate a mini <em>FTP (File Transfer Protocol)</em> system using a simple browser-based interface that allows file upload, download, and deletion across devices on the same network.
+        </li>
+
+        <li><strong>Choosing the Tech Stack:</strong><br>
+          • <strong>HTML, CSS, JS</strong> → for the front-end (user interface).<br>
+          • <strong>Node.js</strong> with <strong>Express</strong> → for the back-end server to handle uploads, file storage, and downloads.<br>
+          • <strong>Multer</strong> → to manage file uploads easily in Node.js.<br>
+          • <strong>CORS</strong> → to allow file transfers between devices on the same network (laptop ↔ phone).<br>
+          • <strong>Local Storage System</strong> → files are stored in an "uploads" folder inside the project directory.
+        </li>
+
+        <li><strong>Building the Server (server.js):</strong><br>
+          I created a Node.js server using Express. It handles routes for:<br>
+          • <code>/upload</code> → saves the uploaded file.<br>
+          • <code>/files</code> → lists all available files.<br>
+          • <code>/download/:filename</code> → downloads any file.<br>
+          • <code>/delete</code> → deletes a file on request.<br>
+          Files are stored in the <code>uploads</code> directory.
+        </li>
+
+        <li><strong>Designing the Front-End:</strong><br>
+          The interface includes:<br>
+          • Upload section with progress bar.<br>
+          • “Available Files” list showing all uploaded files.<br>
+          • Action buttons (⬇ Download / 🗑 Delete).<br>
+          • Extra features: “Get IP” button, Help modal, Learn modal, and Developed By modal.<br>
+          The entire UI uses a <strong>dark theme</strong> for a modern, professional look.
+        </li>
+
+        <li><strong>Adding Interactivity (script.js):</strong><br>
+          I used JavaScript to connect the front-end with the server:<br>
+          • Fetch API for uploading, downloading, and deleting.<br>
+          • XMLHttpRequest to show real-time upload progress.<br>
+          • Dynamic file list updating after each upload or delete.<br>
+          • Modals for Learn, Developed By, and Help windows.<br>
+          • Automatic detection of current IP for easy LAN connection.
+        </li>
+
+        <li><strong>Testing and Debugging:</strong><br>
+          I tested it locally using <code>localhost:3000</code>, then across devices by connecting my phone to the same Wi-Fi and opening <code>http://&lt;laptop-ip&gt;:3000</code>.<br>
+          I fixed issues like network errors, file access, and modal lag to make everything run smoothly.
+        </li>
+      </ol>
+
+      <hr style="margin: 20px 0; border: 0.5px solid #1a2235;">
+
+      <h4>⚙ Part 2 — How to Execute & Use This Project</h4>
+      <ol class="help-list">
+        <li><strong>Step 1:</strong> Open your project folder in PowerShell.<br>
+          Example: Right-click → “Open in Terminal”.</li>
+
+        <li><strong>Step 2:</strong> Start the server by typing:<br>
+          <code>node server.js</code><br>
+          You’ll see: <em>Server running on port 3000</em></li>
+
+        <li><strong>Step 3:</strong> Open your browser on the laptop and go to:<br>
+          <code>http://localhost:3000</code></li>
+
+        <li><strong>Step 4:</strong> To open this website on your phone (or another device):<br>
+          • Ensure both devices are connected to the same Wi-Fi or hotspot.<br>
+          • Click the <strong>“Get IP”</strong> button under “Available Files” on your laptop — it will show a link like <code>http://192.168.137.1:3000</code>.<br>
+          • Open that link in your phone browser.</li>
+
+        <li><strong>Step 5:</strong> To upload a file:<br>
+          Click “Upload”, select a file, and watch the progress bar. You’ll get a message “File uploaded successfully!”.</li>
+
+        <li><strong>Step 6:</strong> To download a file:<br>
+          Click the ⬇ icon next to the file name.</li>
+
+        <li><strong>Step 7:</strong> To delete a file:<br>
+          Click the 🗑 icon → confirm deletion → file disappears instantly.</li>
+
+        <li><strong>Step 8:</strong> For phone uploads:<br>
+          It works if both devices share the same network. Allow “node.exe” through Windows Firewall if blocked.</li>
+
+        <li><strong>Step 9:</strong> To stop the server:<br>
+          Press <strong>Ctrl + C</strong> in PowerShell.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+<textarea id="code-server" hidden>
+ // -----------------------------
+// Mini FTP File Transfer Server
+// Developed by Aryan Sharma (24BCE5037)
+// Guided by Dr. Swaminathan Annadurai
+// -----------------------------
+const express = require("express");
+const cors = require("cors");
+const multer = require("multer");
+const fs = require("fs");
+const path = require("path");
+
+const app = express();
+const PORT = 3000;
+
+app.use(cors());
+app.use(express.static("public"));
+app.use(express.json());
+
+const uploadDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadDir),
+  filename: (req, file, cb) => cb(null, file.originalname),
+});
+const upload = multer({ storage });
+
+app.post("/upload", upload.single("file"), (req, res) => {
+  res.json({ message: "File uploaded successfully!" });
+});
+
+app.get("/files", (req, res) => {
+  const files = fs.readdirSync(uploadDir);
+  res.json(files);
+});
+
+app.get("/download/:filename", (req, res) => {
+  const file = path.join(uploadDir, req.params.filename);
+  res.download(file);
+});
+
+app.delete("/delete", (req, res) => {
+  const { filename } = req.body;
+  if (!filename) return res.status(400).json({ message: "Filename required" });
+  const filePath = path.join(uploadDir, filename);
+  if (fs.existsSync(filePath)) {
+    fs.unlinkSync(filePath);
+    res.json({ message: filename + " deleted successfully!" });
+  } else {
+    res.status(404).json({ message: "File not found!" });
+  }
+});
+
+app.listen(PORT, () =>
+  console.log(\🚀 Server running at http://localhost:\${PORT}\)
+);
+  </textarea>
+
+  <textarea id="code-index" hidden>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Mini FTP File Transfer Platform</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- (This code is the same file you are viewing — provided here for complete listing in the modal.) -->
+  <!-- To avoid recursion issues, we do not embed the modal section again here. -->
+  <!-- See your working page for full runtime content. -->
+</body>
+</html>
+  </textarea>
+
+  <textarea id="code-style" hidden>
+/* Full dark theme CSS (same as style.css below in this answer) */
+:root{
+  --bg1:#0b1220;
+  --bg2:#0a0f1a;
+  --card:#121a2b;
+  --panel:#0f1726;
+  --border: rgba(255,255,255,0.08);
+  --text:#e6edf3;
+  --muted:#a9b4c2;
+  --accent:#6aa6ff;
+  --accent-2:#7c5cff;
+  --danger:#ff5b6b;
+  --success:#2ecc71;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;font-family:'Poppins',system-ui,Segoe UI,Roboto,Arial;color:var(--text)}
+body{
+  background: radial-gradient(60% 80% at 20% 20%, #111b30 0%, var(--bg1) 60%, var(--bg2) 100%);
+}
+.topbar{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:16px 22px;border-bottom:1px solid var(--border);
+  background: linear-gradient(90deg, rgba(106,166,255,0.07), transparent);
+}
+.brand h1{margin:0;font-size:20px;font-weight:700}
+.brand .tag{margin:2px 0 0;color:var(--muted);font-size:12px}
+.container{max-width:1024px;margin:26px auto;padding:0 16px;display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:880px){ .container{grid-template-columns:1fr} }
+.card{
+  background: linear-gradient(180deg, rgba(18,26,43,0.96), rgba(18,26,43,0.86));
+  border:1px solid var(--border);
+  border-radius:14px;padding:18px;box-shadow:0 10px 30px rgba(0,0,0,0.35);
+}
+.card h2{margin:0 0 10px}
+.upload-form{display:flex;gap:10px;align-items:center}
+.upload-form input[type="file"]{flex:1;color:var(--muted)}
+.btn{padding:9px 14px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;font-weight:600}
+.btn.primary{background:linear-gradient(90deg,var(--accent),var(--accent-2));border-color:transparent}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.ghost:hover{background:rgba(255,255,255,0.05)}
+.action-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.progress-wrap{margin-top:12px;display:flex;flex-direction:column;gap:8px}
+progress{width:100%;height:14px;border-radius:8px;overflow:hidden;background:#10192b}
+progress::-webkit-progress-bar{background:#10192b}
+progress::-webkit-progress-value{background:linear-gradient(90deg,var(--accent),var(--accent-2))}
+.status{margin:0;color:var(--muted);font-size:12px}
+.file-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.file-list li{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:10px 12px;border:1px solid var(--border);border-radius:10px;
+  background:linear-gradient(180deg, rgba(21,30,50,0.9), rgba(21,30,50,0.75));
+}
+.file-actions{display:flex;gap:8px}
+.icon-btn{background:transparent;border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:8px;cursor:pointer}
+.icon-btn.download{border-color:rgba(106,166,255,0.5)}
+.icon-btn.delete{border-color:rgba(255,91,107,0.5);color:var(--danger)}
+.modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(3,6,12,0.6);padding:16px;z-index:100}
+.modal.show{display:flex}
+.modal-content{
+  background:linear-gradient(180deg,#0f1726,#0c1422);
+  color:var(--text);border:1px solid var(--border);border-radius:14px;max-width:900px;width:100%;
+  max-height:86vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,0.6);padding:18px;position:relative;
+}
+.modal-content.large{max-width:980px}
+.modal-body{color:var(--text)}
+.close{position:absolute;right:14px;top:10px;border:none;background:transparent;color:#c8d4e3;font-size:24px;cursor:pointer}
+.code-body pre{background:#0a1020;border:1px solid var(--border);border-radius:10px;color:#e6edf3;padding:12px;overflow:auto;max-height:360px}
+details summary{cursor:pointer;font-weight:600;margin:10px 0}
+.credit{display:flex;gap:14px;align-items:center}
+.credit-pic{width:70px;height:70px;border-radius:12px;object-fit:cover;border:1px solid var(--border)}
+.credit-text .credit-title{font-size:13px;color:var(--muted)}
+.credit-text .credit-name{font-size:18px;font-weight:700}
+.credit-text .credit-sub{font-size:13px;color:var(--muted)}
+.help-list{margin:0;padding-left:18px}
+.help-list li{margin:6px 0}
+a{color:var(--accent)}
+  </textarea>
+
+  <textarea id="code-script" hidden>
+// -----------------------------
+// Mini FTP File Transfer Platform Script
+// Developed by Aryan Sharma (24BCE5037)
+// Guided by Dr. Swaminathan Annadurai
+// -----------------------------
+const SERVER_URL = window.location.origin;
+
+const uploadForm = document.getElementById("uploadForm");
+const fileInput = document.getElementById("fileInput");
+const progressBar = document.getElementById("progressBar");
+const statusEl = document.getElementById("status");
+const fileList = document.getElementById("fileList");
+
+// Modal control
+const modals = {
+  about: document.getElementById("aboutModal"),
+  details: document.getElementById("detailsModal"),
+  dev: document.getElementById("devModal"),
+  guide: document.getElementById("guideModal"),
+  help: document.getElementById("helpModal"),
+};
+function openModal(m){ m.classList.add("show"); document.body.style.overflow="hidden"; }
+function closeModal(m){ m.classList.remove("show"); document.body.style.overflow=""; }
+document.querySelectorAll("[data-close]").forEach(b=>b.addEventListener("click",e=>closeModal(e.target.closest(".modal"))));
+Object.values(modals).forEach(m=>m.addEventListener("click",e=>{ if(e.target===m) closeModal(m); }));
+document.getElementById("aboutBtn").onclick = ()=> openModal(modals.about);
+document.getElementById("detailsBtn").onclick = ()=> { // fill sources then open
+  document.getElementById("view-server").textContent = document.getElementById("code-server").value.trim();
+  document.getElementById("view-index").textContent  = document.getElementById("code-index").value.trim();
+  document.getElementById("view-style").textContent  = document.getElementById("code-style").value.trim();
+  document.getElementById("view-script").textContent = document.getElementById("code-script").value.trim();
+  openModal(modals.details);
+};
+document.getElementById("devBtn").onclick   = ()=> openModal(modals.dev);
+document.getElementById("guideBtn").onclick = ()=> openModal(modals.guide);
+document.getElementById("helpBtn").onclick  = ()=> openModal(modals.help);
+
+// Upload with progress
+uploadForm.addEventListener("submit", (e)=>{
+  e.preventDefault();
+  const file = fileInput.files[0];
+  if(!file) return alert("Please select a file first!");
+
+  const fd = new FormData();
+  fd.append("file", file);
+
+  const xhr = new XMLHttpRequest();
+  xhr.open("POST", \\${SERVER_URL}/upload\);
+
+  document.getElementById("progressContainer").style.display = "flex";
+  statusEl.textContent = "Uploading..."; statusEl.style.color = "#a9b4c2";
+
+  xhr.upload.onprogress = (ev)=>{
+    if(ev.lengthComputable){
+      const pct = Math.round((ev.loaded/ev.total)*100);
+      progressBar.value = pct;
+      statusEl.textContent = \Uploading... \${pct}%\;
+    }
+  };
+
+  xhr.onload = async ()=>{
+    if(xhr.status === 200){
+      try{
+        const json = JSON.parse(xhr.responseText);
+        statusEl.textContent = json.message || "Uploaded";
+      }catch{
+        statusEl.textContent = "Uploaded";
+      }
+      statusEl.style.color = "#2ecc71";
+      fileInput.value = "";
+      await loadFiles();
+      setTimeout(()=>{ progressBar.value = 0; statusEl.textContent = ""; }, 900);
+    }else{
+      statusEl.textContent = "Upload failed"; statusEl.style.color = "#ff5b6b";
+    }
+  };
+
+  xhr.onerror = ()=>{
+    statusEl.textContent = "Network error"; statusEl.style.color = "#ff5b6b";
+  };
+
+  xhr.send(fd);
+});
+
+// List files
+async function loadFiles(){
+  try{
+    const res = await fetch(\\${SERVER_URL}/files\);
+    if(!res.ok) throw new Error("Failed to load files");
+    const files = await res.json();
+    fileList.innerHTML = "";
+    if(!files.length){
+      fileList.innerHTML = "<li style='color:#a9b4c2;padding:10px'>No files uploaded yet.</li>";
+      return;
+    }
+    files.forEach(name=>{
+      const li = document.createElement("li");
+      const left = document.createElement("div");
+      left.textContent = name; left.style.flex = "1";
+
+      const actions = document.createElement("div");
+      actions.className = "file-actions";
+
+      const dl = document.createElement("a");
+      dl.href = \\${SERVER_URL}/download/\${encodeURIComponent(name)}\;
+      dl.className = "icon-btn download"; dl.title = "Download"; dl.innerHTML = "⬇"; dl.setAttribute("download", name);
+
+      const del = document.createElement("button");
+      del.className = "icon-btn delete"; del.title = "Delete"; del.innerHTML = "🗑";
+      del.onclick = ()=> deleteFile(name);
+
+      actions.append(dl, del);
+      li.append(left, actions);
+      fileList.append(li);
+    });
+  }catch(err){
+    console.error(err);
+    fileList.innerHTML = "<li style='color:#ff5b6b;padding:10px'>Error loading files.</li>";
+  }
+}
+
+// Delete file
+async function deleteFile(name){
+  if(!confirm(\Delete "\${name}"?\)) return;
+  try{
+    const res = await fetch(\\${SERVER_URL}/delete\, {
+      method: "DELETE",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ filename: name })
+    });
+    const data = await res.json();
+    alert(data.message);
+    loadFiles();
+  }catch(err){
+    alert("Delete failed"); console.error(err);
+  }
+}
+
+// Initial load
+loadFiles();
+  </textarea>
+
+  <script src="script.js"></script>
+</body>
+</html>
